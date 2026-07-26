@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>值班回复助手 v3 测试页</title>
+  <style>
+    :root { font-family: "Microsoft YaHei UI", sans-serif; color: #514b49; }
+    body { margin: 0; background: #f3eee8; }
+    main { max-width: 760px; margin: 50px auto; padding: 0 20px; }
+    h1 { color: #936d72; }
+    .card { background: #fbf8f4; border: 1px solid #d9cec5; border-radius: 16px; padding: 24px; margin: 18px 0; }
+    textarea, [contenteditable] { width: 100%; min-height: 100px; border: 1px solid #d9cec5; border-radius: 10px; background: white; padding: 12px; box-sizing: border-box; }
+    code { background: #e8ddd4; border-radius: 5px; padding: 2px 5px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>值班回复助手 v3 测试页</h1>
+    <p>在扩展中启用 <code>localhost</code> 后测试。这个页面不会发送或保存你输入的内容。</p>
+    <section class="card">
+      <h2>普通多行输入框</h2>
+      <textarea placeholder="输入：你发一下截图"></textarea>
+    </section>
+    <section class="card">
+      <h2>富文本输入框</h2>
+      <div contenteditable="true">点击这里，输入“你”或按 Alt+1。</div>
+    </section>
+  </main>
+</body>
+</html>
