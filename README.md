@@ -1,2 +1,50 @@
-# duty-reply-assistant
-A desktop and browser assistant for duty replies, polite text replacement, and Linux/HPC command search.
+# 值班回复助手
+
+一个面向 Windows 值班与客服沟通场景的本地效率工具，包含桌面助手和 Edge/Chrome 浏览器扩展。
+
+## 主要功能
+
+- 在微信、飞书客户端、记事本等 Windows 软件中使用全局快捷话术
+- 在允许的网站输入框中插入常用回复
+- 按本地规则将“你”等表达替换为更礼貌的说法
+- 自定义桌面端和网页端快捷键，减少与微信、浏览器等软件的冲突
+- 导入并检索本地 TXT、Markdown、Word 和 PDF 文档
+- 使用中文或英文搜索 Linux/HPC 常用命令
+- 所有话术、规则和文档索引默认保存在本机
+
+## 推荐版本
+
+日常使用请进入 [`versions/v5`](versions/v5)，按照其中的 README 操作。
+
+v5 的推荐默认快捷键：
+
+| 功能 | 默认快捷键 |
+|---|---|
+| 桌面常用话术 1～9 | `Ctrl+Alt+1～9` |
+| 显示或隐藏桌面助手 | `Ctrl+Alt+Space` |
+| 润色外部软件中选中的文字 | `Ctrl+Alt+R` |
+| 网页常用话术 1～9 | `Ctrl+Shift+1～9` |
+| Linux/HPC 命令搜索 | `Ctrl+Shift+K` |
+
+桌面与网页快捷键均可修改。Linux/HPC 搜索快捷键由 Edge/Chrome 的扩展快捷键页面管理。
+
+## 版本目录
+
+| 版本 | 核心变化 |
+|---|---|
+| [v1](versions/v1) | 桌面助手基础版：话术管理、全局快捷回复、礼貌润色和本地文档检索 |
+| [v2](versions/v2) | 莫兰迪界面；支持在其他软件中选中文字后快捷润色 |
+| [v3](versions/v3) | 新增 Edge/Chrome 扩展，实现指定网站内的礼貌替换和网页快捷话术 |
+| [v4](versions/v4) | 新增 Linux/HPC 命令知识库；网页话术改用 `Ctrl+Shift+数字` |
+| [v5](versions/v5) | 桌面和网页快捷键可配置；桌面默认改为 `Ctrl+Alt+数字`，减少微信冲突 |
+
+更完整的演进说明见 [`VERSION_HISTORY.md`](VERSION_HISTORY.md)。
+
+## 安全与使用边界
+
+- 快捷回复只负责插入文字，不会自动点击发送。
+- 浏览器扩展仅在用户主动允许的网站运行。
+- 礼貌润色使用本地替换规则，并非大模型语义改写。
+- 请勿导入密码、密钥、个人身份信息或单位禁止本地缓存的资料。
+- 自行打包的 EXE 没有商业数字签名，Windows 可能显示未知发布者提示。
+
