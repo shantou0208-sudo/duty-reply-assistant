@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "值班回复助手 · 网页增强",
+  "version": "3.0.0",
+  "description": "在授权的工作网页中自动替换礼貌用语，并用 Alt+1～9 插入常用回复。",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_title": "值班回复助手",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}
