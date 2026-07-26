@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>值班回复助手设置</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="settings-shell">
+    <header class="hero">
+      <span class="eyebrow">MORANDI EDITION · V3</span>
+      <h1>值班回复助手</h1>
+      <p>只在授权的工作网站运行。修改后点击保存并刷新工作网页。</p>
+    </header>
+
+    <section class="panel">
+      <h2>允许的网站</h2>
+      <p class="hint">每行一个域名，例如 <code>example.com</code>。不要填写完整页面路径。</p>
+      <textarea id="enabledSites" rows="5" placeholder="support.example.com"></textarea>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <h2>礼貌替换规则</h2>
+          <p class="hint">长句规则会优先匹配。</p>
+        </div>
+        <button id="addRule" class="secondary">＋ 添加规则</button>
+      </div>
+      <div id="rules" class="rule-list"></div>
+    </section>
+
+    <section class="panel">
+      <h2>网页快捷话术</h2>
+      <p class="hint">网页默认使用 Ctrl+Shift+1～9。可更换前面的修饰键组合，数字仍为 1～9。</p>
+      <label class="hotkey-select-row">
+        <span>话术组合键</span>
+        <select id="replyHotkeyPrefix">
+          <option value="ctrl+shift">Ctrl+Shift+数字（推荐）</option>
+          <option value="ctrl+alt">Ctrl+Alt+数字</option>
+          <option value="alt+shift">Alt+Shift+数字</option>
+          <option value="ctrl+alt+shift">Ctrl+Alt+Shift+数字</option>
+        </select>
+      </label>
+      <div id="replies" class="reply-list"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Linux/HPC 命令库</h2>
+      <p class="hint">默认按 <code>Ctrl+Shift+K</code> 打开，支持中文和英文检索。也可以点击扩展图标后打开。</p>
+      <button id="openShortcuts" class="secondary">修改浏览器扩展快捷键</button>
+    </section>
+
+    <footer class="save-bar">
+      <span id="status"></span>
+      <button id="reset" class="ghost">恢复默认</button>
+      <button id="save" class="primary">保存设置</button>
+    </footer>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>
