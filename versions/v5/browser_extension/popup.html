@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>值班回复助手</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="popup-body">
+  <main class="popup-card">
+    <header>
+      <span class="eyebrow">DUTY REPLY</span>
+      <h1>值班回复助手 ♡</h1>
+      <p id="siteLabel">正在读取当前网站…</p>
+    </header>
+
+    <label class="switch-row">
+      <span>
+        <strong>在此网站启用</strong>
+        <small id="replyHint">自动替换及 Ctrl+Shift+1～9</small>
+      </span>
+      <input id="siteEnabled" type="checkbox">
+    </label>
+
+    <label class="switch-row">
+      <span>
+        <strong>自动礼貌替换</strong>
+        <small>例如“你”→“您”</small>
+      </span>
+      <input id="autoReplace" type="checkbox">
+    </label>
+
+    <p id="status" class="status"></p>
+    <button id="openLinux" class="secondary wide">打开 Linux 命令库</button>
+    <button id="openOptions" class="primary">编辑规则和话术</button>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
