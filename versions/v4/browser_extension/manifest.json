@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "值班回复助手 · 网页增强",
+  "version": "4.0.0",
+  "description": "在授权的工作网页中自动替换礼貌用语、插入常用回复并搜索 Linux/HPC 命令。",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_title": "值班回复助手",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "service_worker.js"
+  },
+  "commands": {
+    "open-linux-search": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+K"
+      },
+      "description": "打开 Linux/HPC 命令搜索"
+    }
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "linux_commands.js",
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}
