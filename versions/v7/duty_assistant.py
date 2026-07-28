@@ -15,15 +15,15 @@ from tkinter import filedialog, messagebox, ttk
 
 from commands_data import DEFAULT_COMMANDS
 
-BUILD_ID = "2026-07-28b"
-APP_NAME = "值班回复助手 v7 · Mini Bar（7月28日更新）"
+BUILD_ID = "2026-07-28c"
+APP_NAME = "值班回复助手 v7 · Mini Bar"
 APP_DIR = Path(os.getenv("APPDATA", Path.home())) / "DutyReplyAssistant"
 DB_PATH = APP_DIR / "assistant.db"
 CONFIG_PATH = APP_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "always_on_top": True,
-    "bar_geometry": "520x64",
+    "bar_geometry": "330x58",
     "toggle_hotkey": "ctrl+alt+space",
     "polish_hotkey": "ctrl+alt+r",
     "command_hotkey": "ctrl+alt+k",
@@ -584,132 +584,226 @@ class CommandEditor(tk.Toplevel):
 
 
 class CommandPalette(tk.Toplevel):
-    """由全局快捷键唤出的轻量命令搜索框。"""
+    """网页弹层风格的轻量命令搜索框。"""
 
     def __init__(self, app: "DutyAssistant"):
         super().__init__(app)
         self.app = app
-        self.title("Linux / Conda / Slurm 命令搜索")
-        self.geometry("760x480")
-        self.minsize(620, 400)
+        self.title("Linux / Conda / Slurm 命令库")
+        self.geometry("640x540")
+        self.minsize(560, 440)
         self.attributes("-topmost", True)
+        self.configure(background="#F3EEE8")
         self.protocol("WM_DELETE_WINDOW", self.withdraw)
         self.withdraw()
+        self.rows = []
+        self.active_index = 0
+        self.cards = []
 
-        body = ttk.Frame(self, padding=12)
-        body.pack(fill="both", expand=True)
-        top = ttk.Frame(body)
-        top.pack(fill="x")
-        ttk.Label(
-            top,
-            text="命令搜索",
-            font=("Microsoft YaHei UI", 13, "bold"),
-        ).pack(side="left", padx=(0, 10))
-        self.search = ttk.Entry(top)
-        self.search.pack(side="left", fill="x", expand=True)
+        outer = tk.Frame(self, background="#F3EEE8", padx=18, pady=14)
+        outer.pack(fill="both", expand=True)
+        tk.Label(
+            outer,
+            text="Linux / Conda / Slurm 命令库",
+            background="#F3EEE8",
+            foreground="#514B49",
+            font=("Microsoft YaHei UI", 16, "bold"),
+        ).pack(anchor="w")
+        tk.Label(
+            outer,
+            text="输入中文或英文关键词，Enter 复制当前命令",
+            background="#F3EEE8",
+            foreground="#817976",
+            font=("Microsoft YaHei UI", 9),
+        ).pack(anchor="w", pady=(2, 10))
+
+        self.search = tk.Entry(
+            outer,
+            background="#FFFCF8",
+            foreground="#514B49",
+            insertbackground="#9B7378",
+            relief="flat",
+            highlightthickness=2,
+            highlightbackground="#D9CEC5",
+            highlightcolor="#C89FA3",
+            font=("Microsoft YaHei UI", 11),
+        )
+        self.search.pack(fill="x", ipady=9)
         self.search.bind("<KeyRelease>", self.on_search_key)
         self.search.bind("<Down>", lambda _e: self.move_selection(1))
         self.search.bind("<Up>", lambda _e: self.move_selection(-1))
         self.search.bind("<Return>", lambda _e: self.copy_selected())
         self.search.bind("<Escape>", lambda _e: self.withdraw())
 
-        center = ttk.Frame(body)
-        center.pack(fill="both", expand=True, pady=10)
-        self.listbox = tk.Listbox(
-            center,
-            width=34,
-            activestyle="none",
-            background="#FBF8F4",
-            foreground="#514B49",
-            selectbackground="#D9B9B8",
+        result_shell = tk.Frame(outer, background="#F3EEE8")
+        result_shell.pack(fill="both", expand=True, pady=(12, 8))
+        self.canvas = tk.Canvas(
+            result_shell,
+            background="#F3EEE8",
+            highlightthickness=0,
             borderwidth=0,
-            highlightthickness=1,
-            highlightbackground="#D9CEC5",
-            font=("Microsoft YaHei UI", 10),
         )
-        self.listbox.pack(side="left", fill="both")
-        self.listbox.bind("<<ListboxSelect>>", self.show_selected)
-        self.listbox.bind("<Double-Button-1>", lambda _e: self.copy_selected())
-        self.listbox.bind("<Return>", lambda _e: self.copy_selected())
-        self.listbox.bind("<Escape>", lambda _e: self.withdraw())
-        right = ttk.Frame(center)
-        right.pack(side="left", fill="both", expand=True, padx=(10, 0))
-        self.command_title = ttk.Label(
-            right, text="", font=("Microsoft YaHei UI", 12, "bold")
+        scrollbar = ttk.Scrollbar(result_shell, orient="vertical", command=self.canvas.yview)
+        self.results_frame = tk.Frame(self.canvas, background="#F3EEE8")
+        self.results_window = self.canvas.create_window(
+            (0, 0), window=self.results_frame, anchor="nw"
         )
-        self.command_title.pack(anchor="w")
-        self.command_text = tk.Text(right, height=12, wrap="none")
-        self.command_text.pack(fill="both", expand=True, pady=(6, 8))
-        self.description = ttk.Label(right, text="", wraplength=380)
-        self.description.pack(anchor="w", fill="x")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        self.results_frame.bind(
+            "<Configure>",
+            lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
+        )
+        self.canvas.bind(
+            "<Configure>",
+            lambda e: self.canvas.itemconfigure(self.results_window, width=e.width),
+        )
+        self.canvas.bind_all("<MouseWheel>", self.on_mousewheel)
 
-        foot = ttk.Frame(body)
-        foot.pack(fill="x")
-        ttk.Label(
-            foot,
-            text="↑↓ 选择　Enter 复制并关闭　Esc 关闭",
+        footer = tk.Frame(outer, background="#F3EEE8")
+        footer.pack(fill="x")
+        tk.Label(
+            footer,
+            text="↑↓ 选择　Enter 复制　Esc 关闭",
+            background="#F3EEE8",
             foreground="#817976",
+            font=("Microsoft YaHei UI", 9),
         ).pack(side="left")
-        ttk.Button(foot, text="管理命令库", command=self.open_manager).pack(side="right")
-        ttk.Button(
-            foot, text="复制命令", style="Accent.TButton", command=self.copy_selected
-        ).pack(side="right", padx=8)
-        self.rows = []
+        ttk.Button(footer, text="管理命令库", command=self.open_manager).pack(side="right")
 
     def open_palette(self) -> None:
         self.deiconify()
         self.lift()
         self.focus_force()
         self.search.delete(0, "end")
+        self.active_index = 0
         self.refresh()
         self.search.focus_set()
 
     def on_search_key(self, event) -> None:
         if event.keysym not in {"Up", "Down", "Return", "Escape"}:
+            self.active_index = 0
             self.refresh()
 
+    def on_mousewheel(self, event):
+        if self.state() != "withdrawn":
+            self.canvas.yview_scroll(int(-event.delta / 120), "units")
+
     def refresh(self) -> None:
-        self.rows = self.app.repo.search_commands(self.search.get())
-        self.listbox.delete(0, "end")
-        for row in self.rows[:100]:
-            self.listbox.insert("end", f"[{row['category']}] {row['title']}")
-        if self.rows:
-            self.listbox.selection_set(0)
-            self.show_selected()
-        else:
-            self.command_title.configure(text="未找到匹配命令")
-            self.command_text.delete("1.0", "end")
-            self.description.configure(text="可在管理页新增命令或补充搜索关键词。")
-
-    def current(self):
-        selected = self.listbox.curselection()
-        return self.rows[selected[0]] if selected and selected[0] < len(self.rows) else None
-
-    def show_selected(self, _event=None) -> None:
-        row = self.current()
-        if not row:
+        self.rows = self.app.repo.search_commands(self.search.get())[:30]
+        for child in self.results_frame.winfo_children():
+            child.destroy()
+        self.cards = []
+        if not self.rows:
+            tk.Label(
+                self.results_frame,
+                text="没有找到匹配命令\n可在“管理命令库”中自行添加",
+                background="#FBF8F4",
+                foreground="#817976",
+                font=("Microsoft YaHei UI", 11),
+                pady=36,
+            ).pack(fill="x")
             return
-        self.command_title.configure(text=f"{row['title']}  ·  {row['category']}")
-        self.command_text.delete("1.0", "end")
-        self.command_text.insert("1.0", row["command"])
-        self.description.configure(text=row["description"])
+        self.active_index = min(self.active_index, len(self.rows) - 1)
+        for index, row in enumerate(self.rows):
+            card = self.make_card(index, row)
+            card.pack(fill="x", pady=(0, 8))
+            self.cards.append(card)
+        self.paint_selection()
+
+    def make_card(self, index: int, row):
+        card = tk.Frame(
+            self.results_frame,
+            background="#FFFCF8",
+            highlightthickness=1,
+            highlightbackground="#D9CEC5",
+            padx=12,
+            pady=9,
+            cursor="hand2",
+        )
+        header = tk.Frame(card, background="#FFFCF8")
+        header.pack(fill="x")
+        category = tk.Label(
+            header,
+            text=row["category"],
+            background="#E8D8D8",
+            foreground="#8B666B",
+            font=("Microsoft YaHei UI", 8, "bold"),
+            padx=7,
+            pady=2,
+        )
+        category.pack(side="left")
+        title = tk.Label(
+            header,
+            text=row["title"],
+            background="#FFFCF8",
+            foreground="#514B49",
+            font=("Microsoft YaHei UI", 11, "bold"),
+        )
+        title.pack(side="left", padx=8)
+        command = row["command"].replace("\n", "  ↵  ")
+        if len(command) > 90:
+            command = command[:90] + "…"
+        command_label = tk.Label(
+            card,
+            text=command,
+            background="#FFFCF8",
+            foreground="#6C625E",
+            font=("Consolas", 10),
+            anchor="w",
+            justify="left",
+        )
+        command_label.pack(fill="x", pady=(7, 3))
+        description = row["description"]
+        if len(description) > 80:
+            description = description[:80] + "…"
+        description_label = tk.Label(
+            card,
+            text=description,
+            background="#FFFCF8",
+            foreground="#817976",
+            font=("Microsoft YaHei UI", 9),
+            anchor="w",
+        )
+        description_label.pack(fill="x")
+        for widget in (card, header, category, title, command_label, description_label):
+            widget.bind("<Button-1>", lambda _e, i=index: self.select_index(i))
+            widget.bind("<Double-Button-1>", lambda _e, i=index: self.copy_index(i))
+        return card
+
+    def select_index(self, index: int) -> None:
+        self.active_index = index
+        self.paint_selection()
+
+    def paint_selection(self) -> None:
+        for index, card in enumerate(self.cards):
+            card.configure(
+                highlightthickness=2 if index == self.active_index else 1,
+                highlightbackground="#C89FA3" if index == self.active_index else "#D9CEC5",
+            )
 
     def move_selection(self, delta: int):
         if not self.rows:
             return "break"
-        selected = self.listbox.curselection()
-        index = selected[0] if selected else 0
-        index = max(0, min(len(self.rows[:100]) - 1, index + delta))
-        self.listbox.selection_clear(0, "end")
-        self.listbox.selection_set(index)
-        self.listbox.see(index)
-        self.show_selected()
+        self.active_index = max(0, min(len(self.rows) - 1, self.active_index + delta))
+        self.paint_selection()
+        if self.cards:
+            self.canvas.update_idletasks()
+            card = self.cards[self.active_index]
+            top = card.winfo_y()
+            height = max(1, self.results_frame.winfo_height())
+            self.canvas.yview_moveto(max(0, top / height - 0.08))
         return "break"
 
+    def copy_index(self, index: int) -> None:
+        self.active_index = index
+        self.copy_selected()
+
     def copy_selected(self) -> None:
-        row = self.current()
-        if not row:
+        if not self.rows:
             return
+        row = self.rows[self.active_index]
         self.app.copy_to_clipboard(row["command"])
         self.app.status.set(f"已复制命令：{row['title']}")
         self.withdraw()
@@ -1059,13 +1153,13 @@ class DutyAssistant(tk.Tk):
         self.config_data = load_config()
         self.repo = Repository()
         self.title(APP_NAME)
-        saved_geometry = self.config_data.get("bar_geometry", "520x64")
+        saved_geometry = self.config_data.get("bar_geometry", "330x58")
         match = re.match(r"(\d+)x(\d+)(.*)", saved_geometry)
-        if match and int(match.group(1)) > 560:
-            saved_geometry = f"520x64{match.group(3)}"
+        if match and (int(match.group(1)) > 380 or int(match.group(2)) > 70):
+            saved_geometry = f"330x58{match.group(3)}"
         self.geometry(saved_geometry)
         self.resizable(True, False)
-        self.minsize(520, 64)
+        self.minsize(300, 58)
         self.attributes("-topmost", self.config_data.get("always_on_top", True))
         # 标题栏的 X 负责真正退出；横条内“隐藏”仅收起，随后可用全局热键唤回。
         self.protocol("WM_DELETE_WINDOW", self.on_exit)
@@ -1127,23 +1221,22 @@ class DutyAssistant(tk.Tk):
         style.map("Accent.TButton", background=[("active", self.palette["rose_dark"])])
 
     def _build_bar(self) -> None:
-        bar = ttk.Frame(self, padding=(9, 7))
+        bar = ttk.Frame(self, padding=(7, 6))
         bar.pack(fill="both", expand=True)
-        ttk.Label(
-            bar,
-            text="♡ 值班助手 v7 · 7月28日更新",
-            font=("Microsoft YaHei UI", 11, "bold"),
-            foreground=self.palette["rose_dark"],
-        ).pack(side="left", padx=(0, 10))
-        ttk.Frame(bar).pack(side="left", fill="x", expand=True)
         ttk.Button(
             bar,
             text="命令库",
             style="Accent.TButton",
             command=self.open_command_palette,
-        ).pack(side="left", padx=(0, 5))
-        ttk.Button(bar, text="管理", command=self.open_manager).pack(side="left", padx=2)
-        ttk.Button(bar, text="隐藏", command=self.hide_bar).pack(side="left", padx=(2, 0))
+        ).grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+        ttk.Button(bar, text="管理", command=self.open_manager).grid(
+            row=0, column=1, sticky="nsew", padx=2
+        )
+        ttk.Button(bar, text="隐藏", command=self.hide_bar).grid(
+            row=0, column=2, sticky="nsew", padx=(4, 0)
+        )
+        for column in range(3):
+            bar.columnconfigure(column, weight=1)
         self.status = tk.StringVar(value="正在注册快捷键…")
         self.tray_status = tk.StringVar(value="托盘：尚未启动")
         self.status_label = ttk.Label(
