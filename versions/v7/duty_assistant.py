@@ -22,9 +22,10 @@ CONFIG_PATH = APP_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "always_on_top": True,
-    "bar_geometry": "680x64",
+    "bar_geometry": "520x64",
     "toggle_hotkey": "ctrl+alt+space",
     "polish_hotkey": "ctrl+alt+r",
+    "command_hotkey": "ctrl+alt+k",
     "politeness_rules": [
         ["你发一下", "麻烦您提供一下"],
         ["你截图", "麻烦您提供一下相关截图"],
@@ -581,6 +582,142 @@ class CommandEditor(tk.Toplevel):
         self.destroy()
 
 
+class CommandPalette(tk.Toplevel):
+    """由全局快捷键唤出的轻量命令搜索框。"""
+
+    def __init__(self, app: "DutyAssistant"):
+        super().__init__(app)
+        self.app = app
+        self.title("Linux / Conda / Slurm 命令搜索")
+        self.geometry("760x480")
+        self.minsize(620, 400)
+        self.attributes("-topmost", True)
+        self.protocol("WM_DELETE_WINDOW", self.withdraw)
+        self.withdraw()
+
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill="both", expand=True)
+        top = ttk.Frame(body)
+        top.pack(fill="x")
+        ttk.Label(
+            top,
+            text="命令搜索",
+            font=("Microsoft YaHei UI", 13, "bold"),
+        ).pack(side="left", padx=(0, 10))
+        self.search = ttk.Entry(top)
+        self.search.pack(side="left", fill="x", expand=True)
+        self.search.bind("<KeyRelease>", self.on_search_key)
+        self.search.bind("<Down>", lambda _e: self.move_selection(1))
+        self.search.bind("<Up>", lambda _e: self.move_selection(-1))
+        self.search.bind("<Return>", lambda _e: self.copy_selected())
+        self.search.bind("<Escape>", lambda _e: self.withdraw())
+
+        center = ttk.Frame(body)
+        center.pack(fill="both", expand=True, pady=10)
+        self.listbox = tk.Listbox(
+            center,
+            width=34,
+            activestyle="none",
+            background="#FBF8F4",
+            foreground="#514B49",
+            selectbackground="#D9B9B8",
+            borderwidth=0,
+            highlightthickness=1,
+            highlightbackground="#D9CEC5",
+            font=("Microsoft YaHei UI", 10),
+        )
+        self.listbox.pack(side="left", fill="both")
+        self.listbox.bind("<<ListboxSelect>>", self.show_selected)
+        self.listbox.bind("<Double-Button-1>", lambda _e: self.copy_selected())
+        self.listbox.bind("<Return>", lambda _e: self.copy_selected())
+        self.listbox.bind("<Escape>", lambda _e: self.withdraw())
+        right = ttk.Frame(center)
+        right.pack(side="left", fill="both", expand=True, padx=(10, 0))
+        self.command_title = ttk.Label(
+            right, text="", font=("Microsoft YaHei UI", 12, "bold")
+        )
+        self.command_title.pack(anchor="w")
+        self.command_text = tk.Text(right, height=12, wrap="none")
+        self.command_text.pack(fill="both", expand=True, pady=(6, 8))
+        self.description = ttk.Label(right, text="", wraplength=380)
+        self.description.pack(anchor="w", fill="x")
+
+        foot = ttk.Frame(body)
+        foot.pack(fill="x")
+        ttk.Label(
+            foot,
+            text="↑↓ 选择　Enter 复制并关闭　Esc 关闭",
+            foreground="#817976",
+        ).pack(side="left")
+        ttk.Button(foot, text="管理命令库", command=self.open_manager).pack(side="right")
+        ttk.Button(
+            foot, text="复制命令", style="Accent.TButton", command=self.copy_selected
+        ).pack(side="right", padx=8)
+        self.rows = []
+
+    def open_palette(self) -> None:
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        self.search.delete(0, "end")
+        self.refresh()
+        self.search.focus_set()
+
+    def on_search_key(self, event) -> None:
+        if event.keysym not in {"Up", "Down", "Return", "Escape"}:
+            self.refresh()
+
+    def refresh(self) -> None:
+        self.rows = self.app.repo.search_commands(self.search.get())
+        self.listbox.delete(0, "end")
+        for row in self.rows[:100]:
+            self.listbox.insert("end", f"[{row['category']}] {row['title']}")
+        if self.rows:
+            self.listbox.selection_set(0)
+            self.show_selected()
+        else:
+            self.command_title.configure(text="未找到匹配命令")
+            self.command_text.delete("1.0", "end")
+            self.description.configure(text="可在管理页新增命令或补充搜索关键词。")
+
+    def current(self):
+        selected = self.listbox.curselection()
+        return self.rows[selected[0]] if selected and selected[0] < len(self.rows) else None
+
+    def show_selected(self, _event=None) -> None:
+        row = self.current()
+        if not row:
+            return
+        self.command_title.configure(text=f"{row['title']}  ·  {row['category']}")
+        self.command_text.delete("1.0", "end")
+        self.command_text.insert("1.0", row["command"])
+        self.description.configure(text=row["description"])
+
+    def move_selection(self, delta: int):
+        if not self.rows:
+            return "break"
+        selected = self.listbox.curselection()
+        index = selected[0] if selected else 0
+        index = max(0, min(len(self.rows[:100]) - 1, index + delta))
+        self.listbox.selection_clear(0, "end")
+        self.listbox.selection_set(index)
+        self.listbox.see(index)
+        self.show_selected()
+        return "break"
+
+    def copy_selected(self) -> None:
+        row = self.current()
+        if not row:
+            return
+        self.app.copy_to_clipboard(row["command"])
+        self.app.status.set(f"已复制命令：{row['title']}")
+        self.withdraw()
+
+    def open_manager(self) -> None:
+        self.withdraw()
+        self.app.open_manager()
+
+
 class ManagerWindow(tk.Toplevel):
     def __init__(self, app: "DutyAssistant"):
         super().__init__(app)
@@ -719,12 +856,24 @@ class ManagerWindow(tk.Toplevel):
         self.polish_entry = ttk.Entry(self.settings_tab)
         self.polish_entry.pack(fill="x")
         self.polish_entry.insert(0, self.app.config_data["polish_hotkey"])
+        ttk.Label(self.settings_tab, text="打开 Linux/Conda/Slurm 命令搜索").pack(
+            anchor="w", pady=(14, 3)
+        )
+        self.command_entry = ttk.Entry(self.settings_tab)
+        self.command_entry.pack(fill="x")
+        self.command_entry.insert(0, self.app.config_data["command_hotkey"])
         ttk.Label(
             self.settings_tab,
             text="每条常用回复的快捷键在“常用回复 → 编辑”中单独设置，数量不受 1～9 限制。",
             wraplength=680,
             foreground="#817976",
         ).pack(anchor="w", pady=16)
+        tray_row = ttk.Frame(self.settings_tab)
+        tray_row.pack(fill="x", pady=(0, 12))
+        ttk.Label(tray_row, textvariable=self.app.tray_status).pack(side="left")
+        ttk.Button(
+            tray_row, text="重新启动托盘", command=self.app.restart_tray
+        ).pack(side="right")
         ttk.Button(
             self.settings_tab, text="保存并重新注册", command=self.save_settings
         ).pack(anchor="e")
@@ -810,7 +959,6 @@ class ManagerWindow(tk.Toplevel):
             self.app.repo.add_reply(*editor.result)
             self.app.restart_hotkeys()
             self.refresh()
-            self.app.refresh_suggestions()
 
     def edit_reply(self) -> None:
         row = self.current()
@@ -822,7 +970,6 @@ class ManagerWindow(tk.Toplevel):
             self.app.repo.update_reply(row["id"], *editor.result)
             self.app.restart_hotkeys()
             self.refresh()
-            self.app.refresh_suggestions()
 
     def delete_reply(self) -> None:
         row = self.current()
@@ -830,7 +977,6 @@ class ManagerWindow(tk.Toplevel):
             self.app.repo.delete_reply(row["id"])
             self.app.restart_hotkeys()
             self.refresh()
-            self.app.refresh_suggestions()
 
     def test_selected(self) -> None:
         row = self.current()
@@ -849,17 +995,20 @@ class ManagerWindow(tk.Toplevel):
     def save_settings(self) -> None:
         toggle = normalize_shortcut(self.toggle_entry.get())
         polish = normalize_shortcut(self.polish_entry.get())
+        command = normalize_shortcut(self.command_entry.get())
         try:
             parse_shortcut(toggle)
             parse_shortcut(polish)
+            parse_shortcut(command)
         except ValueError as exc:
             messagebox.showwarning(APP_NAME, f"快捷键无效：{exc}", parent=self)
             return
-        if toggle == polish:
-            messagebox.showwarning(APP_NAME, "两个程序快捷键不能相同。", parent=self)
+        if len({toggle, polish, command}) != 3:
+            messagebox.showwarning(APP_NAME, "三个程序快捷键不能相同。", parent=self)
             return
         self.app.config_data["toggle_hotkey"] = toggle
         self.app.config_data["polish_hotkey"] = polish
+        self.app.config_data["command_hotkey"] = command
         save_config(self.app.config_data)
         self.app.restart_hotkeys()
 
@@ -909,7 +1058,11 @@ class DutyAssistant(tk.Tk):
         self.config_data = load_config()
         self.repo = Repository()
         self.title(APP_NAME)
-        self.geometry(self.config_data.get("bar_geometry", "680x64"))
+        saved_geometry = self.config_data.get("bar_geometry", "520x64")
+        match = re.match(r"(\d+)x(\d+)(.*)", saved_geometry)
+        if match and int(match.group(1)) > 560:
+            saved_geometry = f"520x64{match.group(3)}"
+        self.geometry(saved_geometry)
         self.resizable(True, False)
         self.minsize(520, 64)
         self.attributes("-topmost", self.config_data.get("always_on_top", True))
@@ -917,11 +1070,12 @@ class DutyAssistant(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.on_exit)
         self.last_external_hwnd = None
         self.manager: ManagerWindow | None = None
+        self.command_palette: CommandPalette | None = None
         self.hotkeys: HotkeyManager | None = None
         self.tray_icon = None
+        self.tray_thread = None
         self._setup_style()
         self._build_bar()
-        self.refresh_suggestions()
         self.restart_hotkeys()
         self.tray_available = self.start_tray()
         self.protocol(
@@ -976,21 +1130,21 @@ class DutyAssistant(tk.Tk):
         bar.pack(fill="both", expand=True)
         ttk.Label(
             bar,
-            text="♡",
-            font=("Microsoft YaHei UI", 15, "bold"),
+            text="♡ 值班助手运行中",
+            font=("Microsoft YaHei UI", 11, "bold"),
             foreground=self.palette["rose_dark"],
-        ).pack(side="left", padx=(0, 6))
-        self.query = ttk.Entry(bar)
-        self.query.pack(side="left", fill="x", expand=True)
-        self.query.bind("<KeyRelease>", lambda _e: self.refresh_suggestions())
-        self.query.bind("<Return>", lambda _e: self.paste_first())
-        self.query.bind("<Escape>", lambda _e: self.hide_bar())
+        ).pack(side="left", padx=(0, 10))
+        ttk.Frame(bar).pack(side="left", fill="x", expand=True)
         ttk.Button(
-            bar, text="粘贴", style="Accent.TButton", command=self.paste_first
-        ).pack(side="left", padx=(7, 5))
+            bar,
+            text="命令库",
+            style="Accent.TButton",
+            command=self.open_command_palette,
+        ).pack(side="left", padx=(0, 5))
         ttk.Button(bar, text="管理", command=self.open_manager).pack(side="left", padx=2)
         ttk.Button(bar, text="隐藏", command=self.hide_bar).pack(side="left", padx=(2, 0))
         self.status = tk.StringVar(value="正在注册快捷键…")
+        self.tray_status = tk.StringVar(value="托盘：尚未启动")
         self.status_label = ttk.Label(
             self,
             textvariable=self.status,
@@ -998,26 +1152,6 @@ class DutyAssistant(tk.Tk):
             font=("Microsoft YaHei UI", 8),
         )
         # 横条保持单行；状态通过窗口标题和管理页查看，不额外占用高度。
-
-    def refresh_suggestions(self) -> None:
-        self.suggestions = self.repo.all_replies(self.query.get() if hasattr(self, "query") else "")
-        if self.suggestions:
-            row = self.suggestions[0]
-            short = row["content"].replace("\n", " ")
-            self.query.configure()
-            self.title(f"{APP_NAME}｜首选：{row['category']} · {short[:24]}")
-        else:
-            self.title(f"{APP_NAME}｜未找到匹配话术")
-
-    def paste_first(self) -> None:
-        if not self.suggestions:
-            self.bell()
-            return
-        row = self.suggestions[0]
-        self.repo.mark_used(row["id"])
-        target = self.last_external_hwnd
-        self.hide_bar()
-        self.paste_when_released(row["content"], target)
 
     def open_manager(self) -> None:
         if self.manager is None or not self.manager.winfo_exists():
@@ -1027,6 +1161,11 @@ class DutyAssistant(tk.Tk):
             self.manager.lift()
             self.manager.refresh()
 
+    def open_command_palette(self) -> None:
+        if self.command_palette is None or not self.command_palette.winfo_exists():
+            self.command_palette = CommandPalette(self)
+        self.command_palette.open_palette()
+
     def hide_bar(self) -> None:
         self.withdraw()
         self.status.set("助手仍在后台运行，可从右下角托盘或全局快捷键打开")
@@ -1034,8 +1173,7 @@ class DutyAssistant(tk.Tk):
     def show_bar(self) -> None:
         self.deiconify()
         self.lift()
-        self.query.focus_force()
-        self.query.selection_range(0, "end")
+        self.focus_force()
 
     def start_tray(self) -> bool:
         try:
@@ -1043,6 +1181,7 @@ class DutyAssistant(tk.Tk):
             from PIL import Image, ImageDraw
         except ImportError:
             self.status.set("未安装托盘组件：请运行 install_dependencies.bat")
+            self.tray_status.set("托盘：缺少 pystray/Pillow，请安装依赖")
             return False
         image = Image.new("RGBA", (64, 64), (243, 238, 232, 255))
         draw = ImageDraw.Draw(image)
@@ -1064,14 +1203,39 @@ class DutyAssistant(tk.Tk):
         self.tray_icon = pystray.Icon(
             "DutyReplyAssistant", image, "值班回复助手 v7", menu
         )
-        self.tray_icon.run_detached()
+        # Windows 上将消息循环放入独立线程，比 run_detached 在部分 Python
+        # 安装方式（尤其 pythonw/商店版启动器）下更稳定。
+        self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
+        self.tray_thread.start()
+        self.status.set("系统托盘已启动")
+        self.tray_status.set("托盘：已启动；若未显示，请点任务栏右下角 ^")
+        self.after(1200, self.check_tray_status)
         return True
+
+    def check_tray_status(self) -> None:
+        if not self.tray_icon:
+            return
+        if self.tray_thread and not self.tray_thread.is_alive():
+            self.tray_status.set("托盘：启动失败，请点击“重新启动托盘”")
+            self.protocol("WM_DELETE_WINDOW", self.on_exit)
+        elif not getattr(self.tray_icon, "visible", False):
+            self.tray_status.set("托盘：线程运行中，但图标尚未显示")
+
+    def restart_tray(self) -> None:
+        if self.tray_icon:
+            self.tray_icon.stop()
+        self.tray_icon = None
+        self.tray_thread = None
+        self.tray_available = self.start_tray()
+        self.protocol(
+            "WM_DELETE_WINDOW", self.hide_bar if self.tray_available else self.on_exit
+        )
 
     def own_window_handles(self) -> set[int]:
         handles = set()
         if sys.platform != "win32":
             return handles
-        for window in (self, self.manager):
+        for window in (self, self.manager, self.command_palette):
             if window is not None and window.winfo_exists():
                 try:
                     handles.add(ctypes.windll.user32.GetParent(window.winfo_id()) or window.winfo_id())
@@ -1099,6 +1263,11 @@ class DutyAssistant(tk.Tk):
                 "kind": "polish",
                 "label": "润色当前文字",
                 "hotkey": self.config_data["polish_hotkey"],
+            },
+            {
+                "kind": "command",
+                "label": "命令搜索",
+                "hotkey": self.config_data["command_hotkey"],
             },
         ]
         for reply in self.repo.hotkey_bindings():
@@ -1139,6 +1308,9 @@ class DutyAssistant(tk.Tk):
             return
         if kind == "polish":
             self.polish_current_text(hwnd)
+            return
+        if kind == "command":
+            self.open_command_palette()
             return
         if kind == "reply":
             self.repo.mark_used(action["id"])
@@ -1242,6 +1414,7 @@ class DutyAssistant(tk.Tk):
         if self.tray_icon:
             self.tray_icon.stop()
             self.tray_icon = None
+        self.tray_thread = None
         self.repo.close()
         self.destroy()
 
