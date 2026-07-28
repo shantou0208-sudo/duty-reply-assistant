@@ -15,7 +15,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from commands_data import DEFAULT_COMMANDS
 
-BUILD_ID = "2026-07-28c"
+BUILD_ID = "2026-07-28d"
 APP_NAME = "值班回复助手 v7 · Mini Bar"
 APP_DIR = Path(os.getenv("APPDATA", Path.home())) / "DutyReplyAssistant"
 DB_PATH = APP_DIR / "assistant.db"
@@ -157,6 +157,7 @@ class Repository:
                 """
             )
         self.conn.commit()
+        self.reload_command_cache()
 
     def all_replies(self, query: str = "") -> list[sqlite3.Row]:
         query = query.strip()
@@ -227,12 +228,23 @@ class Repository:
         )
         self.conn.commit()
 
-    def search_commands(self, query: str = "", category: str = "全部") -> list[sqlite3.Row]:
-        clauses = []
-        values = []
+    def reload_command_cache(self) -> None:
+        rows = self.conn.execute(
+            "SELECT * FROM command_library ORDER BY category, title, id"
+        ).fetchall()
+        self.command_cache = []
+        for row in rows:
+            item = dict(row)
+            item["_search"] = " ".join(
+                str(item.get(name, ""))
+                for name in ("category", "title", "command", "description", "keywords")
+            ).lower()
+            self.command_cache.append(item)
+
+    def search_commands(self, query: str = "", category: str = "全部") -> list[dict]:
+        rows = self.command_cache
         if category and category != "全部":
-            clauses.append("category LIKE ?")
-            values.append(f"{category}%")
+            rows = [row for row in rows if row["category"].startswith(category)]
         if query.strip():
             cleaned = query.strip().lower()
             for filler in (
@@ -253,22 +265,10 @@ class Repository:
             terms = [term for term in re.split(r"[\s,，;；]+", cleaned) if term]
             if not terms:
                 terms = [query.strip()]
-            searchable = (
-                "(category || ' ' || title || ' ' || command || ' ' "
-                "|| description || ' ' || keywords)"
-            )
-            for term in terms:
-                clauses.append(f"{searchable} LIKE ?")
-                values.append(f"%{term}%")
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        return self.conn.execute(
-            f"""
-            SELECT * FROM command_library
-            {where}
-            ORDER BY category, title, id
-            """,
-            values,
-        ).fetchall()
+            rows = [
+                row for row in rows if all(term.lower() in row["_search"] for term in terms)
+            ]
+        return rows
 
     def add_command(
         self, category: str, title: str, command: str, description: str, keywords: str
@@ -282,6 +282,7 @@ class Repository:
             (category, title, command, description, keywords),
         )
         self.conn.commit()
+        self.reload_command_cache()
 
     def update_command(
         self,
@@ -301,10 +302,12 @@ class Repository:
             (category, title, command, description, keywords, command_id),
         )
         self.conn.commit()
+        self.reload_command_cache()
 
     def delete_command(self, command_id: int) -> None:
         self.conn.execute("DELETE FROM command_library WHERE id = ?", (command_id,))
         self.conn.commit()
+        self.reload_command_cache()
 
     def close(self) -> None:
         self.conn.close()
@@ -599,6 +602,8 @@ class CommandPalette(tk.Toplevel):
         self.rows = []
         self.active_index = 0
         self.cards = []
+        self.refresh_job = None
+        self.search_cache = {}
 
         outer = tk.Frame(self, background="#F3EEE8", padx=18, pady=14)
         outer.pack(fill="both", expand=True)
@@ -663,13 +668,14 @@ class CommandPalette(tk.Toplevel):
 
         footer = tk.Frame(outer, background="#F3EEE8")
         footer.pack(fill="x")
-        tk.Label(
+        self.result_count = tk.Label(
             footer,
             text="↑↓ 选择　Enter 复制　Esc 关闭",
             background="#F3EEE8",
             foreground="#817976",
             font=("Microsoft YaHei UI", 9),
-        ).pack(side="left")
+        )
+        self.result_count.pack(side="left")
         ttk.Button(footer, text="管理命令库", command=self.open_manager).pack(side="right")
 
     def open_palette(self) -> None:
@@ -684,17 +690,32 @@ class CommandPalette(tk.Toplevel):
     def on_search_key(self, event) -> None:
         if event.keysym not in {"Up", "Down", "Return", "Escape"}:
             self.active_index = 0
-            self.refresh()
+            if self.refresh_job:
+                self.after_cancel(self.refresh_job)
+            self.refresh_job = self.after(90, self.refresh)
 
     def on_mousewheel(self, event):
         if self.state() != "withdrawn":
             self.canvas.yview_scroll(int(-event.delta / 120), "units")
 
     def refresh(self) -> None:
-        self.rows = self.app.repo.search_commands(self.search.get())[:30]
+        self.refresh_job = None
+        query = self.search.get().strip().lower()
+        if query not in self.search_cache:
+            self.search_cache[query] = self.app.repo.search_commands(query)
+        all_rows = self.search_cache[query]
+        self.rows = all_rows[:8]
         for child in self.results_frame.winfo_children():
             child.destroy()
         self.cards = []
+        if len(all_rows) > 8:
+            self.result_count.configure(
+                text=f"显示前 8 / {len(all_rows)} 条，请继续输入关键词缩小范围"
+            )
+        else:
+            self.result_count.configure(
+                text=f"共 {len(all_rows)} 条　↑↓ 选择　Enter 复制　Esc 关闭"
+            )
         if not self.rows:
             tk.Label(
                 self.results_frame,
@@ -812,6 +833,9 @@ class CommandPalette(tk.Toplevel):
         self.withdraw()
         self.app.open_manager()
 
+    def clear_cache(self) -> None:
+        self.search_cache.clear()
+
 
 class ManagerWindow(tk.Toplevel):
     def __init__(self, app: "DutyAssistant"):
@@ -820,9 +844,26 @@ class ManagerWindow(tk.Toplevel):
         self.title("值班回复助手 · 管理")
         self.geometry("760x610")
         self.minsize(680, 520)
+        self.configure(background="#F3EEE8")
         self.protocol("WM_DELETE_WINDOW", self.withdraw)
+        header = tk.Frame(self, background="#F3EEE8", padx=16, pady=12)
+        header.pack(fill="x")
+        tk.Label(
+            header,
+            text="值班回复助手",
+            background="#F3EEE8",
+            foreground="#9B7378",
+            font=("Microsoft YaHei UI", 17, "bold"),
+        ).pack(side="left")
+        tk.Label(
+            header,
+            text="本地运行 · 不自动发送",
+            background="#F3EEE8",
+            foreground="#817976",
+            font=("Microsoft YaHei UI", 9),
+        ).pack(side="right", pady=(7, 0))
         notebook = ttk.Notebook(self)
-        notebook.pack(fill="both", expand=True, padx=10, pady=10)
+        notebook.pack(fill="both", expand=True, padx=14, pady=(0, 14))
         self.reply_tab = ttk.Frame(notebook, padding=10)
         self.command_tab = ttk.Frame(notebook, padding=10)
         self.polish_tab = ttk.Frame(notebook, padding=10)
@@ -1023,6 +1064,8 @@ class ManagerWindow(tk.Toplevel):
         self.wait_window(editor)
         if editor.result:
             self.app.repo.add_command(*editor.result)
+            if self.app.command_palette:
+                self.app.command_palette.clear_cache()
             self.refresh_commands()
 
     def edit_command(self) -> None:
@@ -1033,6 +1076,8 @@ class ManagerWindow(tk.Toplevel):
         self.wait_window(editor)
         if editor.result:
             self.app.repo.update_command(row["id"], *editor.result)
+            if self.app.command_palette:
+                self.app.command_palette.clear_cache()
             self.refresh_commands()
 
     def delete_command(self) -> None:
@@ -1041,6 +1086,8 @@ class ManagerWindow(tk.Toplevel):
             APP_NAME, f"确定删除“{row['title']}”吗？", parent=self
         ):
             self.app.repo.delete_command(row["id"])
+            if self.app.command_palette:
+                self.app.command_palette.clear_cache()
             self.refresh_commands()
 
     def current(self):
@@ -1219,6 +1266,25 @@ class DutyAssistant(tk.Tk):
             padding=(12, 7),
         )
         style.map("Accent.TButton", background=[("active", self.palette["rose_dark"])])
+        style.configure(
+            "TNotebook",
+            background=self.palette["canvas"],
+            borderwidth=0,
+            tabmargins=(0, 0, 0, 0),
+        )
+        style.configure(
+            "TNotebook.Tab",
+            background="#E7DED7",
+            foreground=self.palette["muted"],
+            borderwidth=0,
+            padding=(18, 9),
+            font=("Microsoft YaHei UI", 10, "bold"),
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", self.palette["rose"])],
+            foreground=[("selected", "#FFFFFF")],
+        )
 
     def _build_bar(self) -> None:
         bar = ttk.Frame(self, padding=(7, 6))
