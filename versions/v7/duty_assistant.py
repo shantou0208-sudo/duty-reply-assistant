@@ -15,7 +15,8 @@ from tkinter import filedialog, messagebox, ttk
 
 from commands_data import DEFAULT_COMMANDS
 
-APP_NAME = "值班回复助手 v7 · Mini Bar"
+BUILD_ID = "2026-07-28b"
+APP_NAME = "值班回复助手 v7 · Mini Bar（7月28日更新）"
 APP_DIR = Path(os.getenv("APPDATA", Path.home())) / "DutyReplyAssistant"
 DB_PATH = APP_DIR / "assistant.db"
 CONFIG_PATH = APP_DIR / "config.json"
@@ -1130,7 +1131,7 @@ class DutyAssistant(tk.Tk):
         bar.pack(fill="both", expand=True)
         ttk.Label(
             bar,
-            text="♡ 值班助手运行中",
+            text="♡ 值班助手 v7 · 7月28日更新",
             font=("Microsoft YaHei UI", 11, "bold"),
             foreground=self.palette["rose_dark"],
         ).pack(side="left", padx=(0, 10))
