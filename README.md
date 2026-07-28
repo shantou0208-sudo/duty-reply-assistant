@@ -38,7 +38,7 @@ v5 的推荐默认快捷键：
 | [v4](versions/v4) | 新增 Linux/HPC 命令知识库；网页话术改用 `Ctrl+Shift+数字` |
 | [v5](versions/v5) | 桌面和网页快捷键可配置；桌面默认改为 `Ctrl+Alt+数字`，减少微信冲突 |
 | [v6](versions/v6) | 纯桌面窄横条；回复和快捷键数量不限；改进微信窗口识别与粘贴时序 |
-| [v7](versions/v7) | 增加系统托盘、无黑框启动，以及可自行增删的 Linux、Conda、Slurm 命令库 |
+| [v7](versions/v7) | 系统托盘、无黑框启动、可编辑命令库，以及可自定义快捷键唤出的独立命令搜索框 |
 
 更完整的演进说明见 [`VERSION_HISTORY.md`](VERSION_HISTORY.md)。
 
