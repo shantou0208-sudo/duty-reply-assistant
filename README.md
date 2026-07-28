@@ -14,7 +14,7 @@
 
 ## 推荐版本
 
-日常使用请进入 [`versions/v5`](versions/v5)，按照其中的 README 操作。
+需要网页扩展时可使用 [`versions/v5`](versions/v5)。主要在微信和 Windows 软件中使用时，推荐纯桌面版 [`versions/v6`](versions/v6)。
 
 v5 的推荐默认快捷键：
 
@@ -37,6 +37,7 @@ v5 的推荐默认快捷键：
 | [v3](versions/v3) | 新增 Edge/Chrome 扩展，实现指定网站内的礼貌替换和网页快捷话术 |
 | [v4](versions/v4) | 新增 Linux/HPC 命令知识库；网页话术改用 `Ctrl+Shift+数字` |
 | [v5](versions/v5) | 桌面和网页快捷键可配置；桌面默认改为 `Ctrl+Alt+数字`，减少微信冲突 |
+| [v6](versions/v6) | 纯桌面窄横条；回复和快捷键数量不限；改进微信窗口识别与粘贴时序 |
 
 更完整的演进说明见 [`VERSION_HISTORY.md`](VERSION_HISTORY.md)。
 
@@ -47,4 +48,3 @@ v5 的推荐默认快捷键：
 - 礼貌润色使用本地替换规则，并非大模型语义改写。
 - 请勿导入密码、密钥、个人身份信息或单位禁止本地缓存的资料。
 - 自行打包的 EXE 没有商业数字签名，Windows 可能显示未知发布者提示。
-
