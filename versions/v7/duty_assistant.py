@@ -15,7 +15,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from commands_data import DEFAULT_COMMANDS
 
-BUILD_ID = "2026-07-28d"
+BUILD_ID = "2026-07-28e"
 APP_NAME = "值班回复助手 v7 · Mini Bar"
 APP_DIR = Path(os.getenv("APPDATA", Path.home())) / "DutyReplyAssistant"
 DB_PATH = APP_DIR / "assistant.db"
@@ -587,7 +587,11 @@ class CommandEditor(tk.Toplevel):
 
 
 class CommandPalette(tk.Toplevel):
-    """网页弹层风格的轻量命令搜索框。"""
+    """单 Canvas 绘制结果，避免创建大量 Tk 控件。"""
+
+    CARD_HEIGHT = 92
+    CARD_GAP = 8
+    MAX_RESULTS = 8
 
     def __init__(self, app: "DutyAssistant"):
         super().__init__(app)
@@ -601,9 +605,9 @@ class CommandPalette(tk.Toplevel):
         self.withdraw()
         self.rows = []
         self.active_index = 0
-        self.cards = []
         self.refresh_job = None
         self.search_cache = {}
+        self.last_canvas_width = 600
 
         outer = tk.Frame(self, background="#F3EEE8", padx=18, pady=14)
         outer.pack(fill="both", expand=True)
@@ -621,7 +625,6 @@ class CommandPalette(tk.Toplevel):
             foreground="#817976",
             font=("Microsoft YaHei UI", 9),
         ).pack(anchor="w", pady=(2, 10))
-
         self.search = tk.Entry(
             outer,
             background="#FFFCF8",
@@ -640,31 +643,23 @@ class CommandPalette(tk.Toplevel):
         self.search.bind("<Return>", lambda _e: self.copy_selected())
         self.search.bind("<Escape>", lambda _e: self.withdraw())
 
-        result_shell = tk.Frame(outer, background="#F3EEE8")
-        result_shell.pack(fill="both", expand=True, pady=(12, 8))
+        shell = tk.Frame(outer, background="#F3EEE8")
+        shell.pack(fill="both", expand=True, pady=(12, 8))
         self.canvas = tk.Canvas(
-            result_shell,
+            shell,
             background="#F3EEE8",
             highlightthickness=0,
             borderwidth=0,
+            cursor="hand2",
         )
-        scrollbar = ttk.Scrollbar(result_shell, orient="vertical", command=self.canvas.yview)
-        self.results_frame = tk.Frame(self.canvas, background="#F3EEE8")
-        self.results_window = self.canvas.create_window(
-            (0, 0), window=self.results_frame, anchor="nw"
-        )
+        scrollbar = ttk.Scrollbar(shell, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=scrollbar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        self.results_frame.bind(
-            "<Configure>",
-            lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
-        )
-        self.canvas.bind(
-            "<Configure>",
-            lambda e: self.canvas.itemconfigure(self.results_window, width=e.width),
-        )
-        self.canvas.bind_all("<MouseWheel>", self.on_mousewheel)
+        self.canvas.bind("<Configure>", self.on_canvas_resize)
+        self.canvas.bind("<Button-1>", self.on_canvas_click)
+        self.canvas.bind("<Double-Button-1>", self.on_canvas_double_click)
+        self.canvas.bind("<MouseWheel>", self.on_mousewheel)
 
         footer = tk.Frame(outer, background="#F3EEE8")
         footer.pack(fill="x")
@@ -688,15 +683,43 @@ class CommandPalette(tk.Toplevel):
         self.search.focus_set()
 
     def on_search_key(self, event) -> None:
-        if event.keysym not in {"Up", "Down", "Return", "Escape"}:
-            self.active_index = 0
-            if self.refresh_job:
-                self.after_cancel(self.refresh_job)
-            self.refresh_job = self.after(90, self.refresh)
+        if event.keysym in {"Up", "Down", "Return", "Escape"}:
+            return
+        self.active_index = 0
+        if self.refresh_job:
+            self.after_cancel(self.refresh_job)
+        # after_idle 合并同一轮消息中的重复输入，体感比固定延时更跟手。
+        self.refresh_job = self.after_idle(self.refresh)
+
+    def on_canvas_resize(self, event) -> None:
+        width = max(300, event.width)
+        if abs(width - self.last_canvas_width) >= 4:
+            self.last_canvas_width = width
+            self.draw_results()
 
     def on_mousewheel(self, event):
-        if self.state() != "withdrawn":
-            self.canvas.yview_scroll(int(-event.delta / 120), "units")
+        self.canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+        return "break"
+
+    def row_index_at(self, event) -> int | None:
+        y = self.canvas.canvasy(event.y)
+        index = int(y // (self.CARD_HEIGHT + self.CARD_GAP))
+        if 0 <= index < len(self.rows):
+            return index
+        return None
+
+    def on_canvas_click(self, event) -> None:
+        index = self.row_index_at(event)
+        if index is not None:
+            self.active_index = index
+            self.paint_selection()
+            self.search.focus_set()
+
+    def on_canvas_double_click(self, event) -> None:
+        index = self.row_index_at(event)
+        if index is not None:
+            self.active_index = index
+            self.copy_selected()
 
     def refresh(self) -> None:
         self.refresh_job = None
@@ -704,122 +727,138 @@ class CommandPalette(tk.Toplevel):
         if query not in self.search_cache:
             self.search_cache[query] = self.app.repo.search_commands(query)
         all_rows = self.search_cache[query]
-        self.rows = all_rows[:8]
-        for child in self.results_frame.winfo_children():
-            child.destroy()
-        self.cards = []
-        if len(all_rows) > 8:
+        self.rows = all_rows[: self.MAX_RESULTS]
+        self.active_index = min(self.active_index, max(0, len(self.rows) - 1))
+        if len(all_rows) > self.MAX_RESULTS:
             self.result_count.configure(
-                text=f"显示前 8 / {len(all_rows)} 条，请继续输入关键词缩小范围"
+                text=f"前 {self.MAX_RESULTS} / {len(all_rows)} 条，请继续输入关键词"
             )
         else:
             self.result_count.configure(
                 text=f"共 {len(all_rows)} 条　↑↓ 选择　Enter 复制　Esc 关闭"
             )
+        self.draw_results()
+
+    def rounded_rect(self, x1, y1, x2, y2, radius, **kwargs):
+        points = [
+            x1 + radius, y1, x2 - radius, y1, x2, y1, x2, y1 + radius,
+            x2, y2 - radius, x2, y2, x2 - radius, y2, x1 + radius, y2,
+            x1, y2, x1, y2 - radius, x1, y1 + radius, x1, y1,
+        ]
+        return self.canvas.create_polygon(points, smooth=True, splinesteps=12, **kwargs)
+
+    def draw_results(self) -> None:
+        self.canvas.delete("all")
+        width = max(320, self.canvas.winfo_width())
         if not self.rows:
-            tk.Label(
-                self.results_frame,
-                text="没有找到匹配命令\n可在“管理命令库”中自行添加",
-                background="#FBF8F4",
-                foreground="#817976",
+            self.rounded_rect(
+                4, 4, width - 8, 120, 14, fill="#FFFCF8", outline="#D9CEC5"
+            )
+            self.canvas.create_text(
+                width / 2,
+                62,
+                text="没有找到匹配命令\n可在管理页自行添加",
+                fill="#817976",
                 font=("Microsoft YaHei UI", 11),
-                pady=36,
-            ).pack(fill="x")
+                justify="center",
+            )
+            self.canvas.configure(scrollregion=(0, 0, width, 130))
             return
-        self.active_index = min(self.active_index, len(self.rows) - 1)
         for index, row in enumerate(self.rows):
-            card = self.make_card(index, row)
-            card.pack(fill="x", pady=(0, 8))
-            self.cards.append(card)
-        self.paint_selection()
-
-    def make_card(self, index: int, row):
-        card = tk.Frame(
-            self.results_frame,
-            background="#FFFCF8",
-            highlightthickness=1,
-            highlightbackground="#D9CEC5",
-            padx=12,
-            pady=9,
-            cursor="hand2",
-        )
-        header = tk.Frame(card, background="#FFFCF8")
-        header.pack(fill="x")
-        category = tk.Label(
-            header,
-            text=row["category"],
-            background="#E8D8D8",
-            foreground="#8B666B",
-            font=("Microsoft YaHei UI", 8, "bold"),
-            padx=7,
-            pady=2,
-        )
-        category.pack(side="left")
-        title = tk.Label(
-            header,
-            text=row["title"],
-            background="#FFFCF8",
-            foreground="#514B49",
-            font=("Microsoft YaHei UI", 11, "bold"),
-        )
-        title.pack(side="left", padx=8)
-        command = row["command"].replace("\n", "  ↵  ")
-        if len(command) > 90:
-            command = command[:90] + "…"
-        command_label = tk.Label(
-            card,
-            text=command,
-            background="#FFFCF8",
-            foreground="#6C625E",
-            font=("Consolas", 10),
-            anchor="w",
-            justify="left",
-        )
-        command_label.pack(fill="x", pady=(7, 3))
-        description = row["description"]
-        if len(description) > 80:
-            description = description[:80] + "…"
-        description_label = tk.Label(
-            card,
-            text=description,
-            background="#FFFCF8",
-            foreground="#817976",
-            font=("Microsoft YaHei UI", 9),
-            anchor="w",
-        )
-        description_label.pack(fill="x")
-        for widget in (card, header, category, title, command_label, description_label):
-            widget.bind("<Button-1>", lambda _e, i=index: self.select_index(i))
-            widget.bind("<Double-Button-1>", lambda _e, i=index: self.copy_index(i))
-        return card
-
-    def select_index(self, index: int) -> None:
-        self.active_index = index
+            y = index * (self.CARD_HEIGHT + self.CARD_GAP) + 2
+            selected = index == self.active_index
+            self.rounded_rect(
+                3,
+                y,
+                width - 9,
+                y + self.CARD_HEIGHT,
+                13,
+                fill="#FFFCF8",
+                outline="#C89FA3" if selected else "#D9CEC5",
+                width=2 if selected else 1,
+            )
+            category_width = min(100, max(54, len(row["category"]) * 13 + 14))
+            self.rounded_rect(
+                14,
+                y + 11,
+                14 + category_width,
+                y + 34,
+                9,
+                fill="#E8D8D8",
+                outline="",
+            )
+            self.canvas.create_text(
+                14 + category_width / 2,
+                y + 22,
+                text=row["category"],
+                fill="#8B666B",
+                font=("Microsoft YaHei UI", 8, "bold"),
+            )
+            self.canvas.create_text(
+                24 + category_width,
+                y + 22,
+                text=row["title"],
+                anchor="w",
+                fill="#514B49",
+                font=("Microsoft YaHei UI", 11, "bold"),
+            )
+            command = row["command"].replace("\n", "  ↵  ")
+            if len(command) > 82:
+                command = command[:82] + "…"
+            self.canvas.create_text(
+                16,
+                y + 51,
+                text=command,
+                anchor="w",
+                fill="#655C58",
+                font=("Consolas", 10),
+            )
+            description = row["description"]
+            if len(description) > 76:
+                description = description[:76] + "…"
+            self.canvas.create_text(
+                16,
+                y + 75,
+                text=description,
+                anchor="w",
+                fill="#817976",
+                font=("Microsoft YaHei UI", 9),
+            )
+        total_height = len(self.rows) * (self.CARD_HEIGHT + self.CARD_GAP)
+        self.canvas.configure(scrollregion=(0, 0, width, total_height))
         self.paint_selection()
 
     def paint_selection(self) -> None:
-        for index, card in enumerate(self.cards):
-            card.configure(
-                highlightthickness=2 if index == self.active_index else 1,
-                highlightbackground="#C89FA3" if index == self.active_index else "#D9CEC5",
-            )
+        # Canvas 重画成本很低，同时避免维护大量单独控件状态。
+        self.draw_selection_outlines()
+
+    def draw_selection_outlines(self) -> None:
+        self.canvas.delete("selection")
+        if not self.rows:
+            return
+        width = max(320, self.canvas.winfo_width())
+        y = self.active_index * (self.CARD_HEIGHT + self.CARD_GAP) + 2
+        self.rounded_rect(
+            3,
+            y,
+            width - 9,
+            y + self.CARD_HEIGHT,
+            13,
+            fill="",
+            outline="#C89FA3",
+            width=2,
+            tags="selection",
+        )
 
     def move_selection(self, delta: int):
         if not self.rows:
             return "break"
         self.active_index = max(0, min(len(self.rows) - 1, self.active_index + delta))
         self.paint_selection()
-        if self.cards:
-            self.canvas.update_idletasks()
-            card = self.cards[self.active_index]
-            top = card.winfo_y()
-            height = max(1, self.results_frame.winfo_height())
-            self.canvas.yview_moveto(max(0, top / height - 0.08))
+        total = max(1, len(self.rows) * (self.CARD_HEIGHT + self.CARD_GAP))
+        y = self.active_index * (self.CARD_HEIGHT + self.CARD_GAP)
+        self.canvas.yview_moveto(max(0, y / total - 0.04))
         return "break"
-
-    def copy_index(self, index: int) -> None:
-        self.active_index = index
-        self.copy_selected()
 
     def copy_selected(self) -> None:
         if not self.rows:
@@ -1219,6 +1258,8 @@ class DutyAssistant(tk.Tk):
         self._setup_style()
         self._build_bar()
         self.restart_hotkeys()
+        # 主窗口先显示，再在空闲时预建隐藏的命令面板，首次热键打开无需临时构建。
+        self.after(120, self.prepare_command_palette)
         self.tray_available = self.start_tray()
         self.protocol(
             "WM_DELETE_WINDOW", self.hide_bar if self.tray_available else self.on_exit
@@ -1325,6 +1366,11 @@ class DutyAssistant(tk.Tk):
         if self.command_palette is None or not self.command_palette.winfo_exists():
             self.command_palette = CommandPalette(self)
         self.command_palette.open_palette()
+
+    def prepare_command_palette(self) -> None:
+        if self.command_palette is None and self.winfo_exists():
+            self.command_palette = CommandPalette(self)
+            self.command_palette.refresh()
 
     def hide_bar(self) -> None:
         self.withdraw()
